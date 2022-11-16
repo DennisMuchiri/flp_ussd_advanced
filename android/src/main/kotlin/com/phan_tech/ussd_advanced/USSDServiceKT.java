@@ -1,8 +1,3 @@
-/*
- * Copyright (c) 2020. BoostTag E.I.R.L. Romell D.Z.
- * All rights reserved
- * porfile.romellfudi.com
- */
 package com.phan_tech.ussd_advanced;
 
 import android.accessibilityservice.AccessibilityService;

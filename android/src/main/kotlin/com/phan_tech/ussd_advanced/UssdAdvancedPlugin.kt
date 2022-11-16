@@ -3,11 +3,13 @@ package com.phan_tech.ussd_advanced
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
 import android.telecom.TelecomManager
 import android.telephony.TelephonyManager
 import android.telephony.TelephonyManager.UssdResponseCallback
@@ -16,18 +18,21 @@ import android.view.accessibility.AccessibilityEvent
 import androidx.annotation.NonNull
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import com.phan_tech.ussd_advanced.Utils.isAccessibilitySettingsOn
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
 import io.flutter.plugin.common.*
+import io.flutter.plugin.common.EventChannel.EventSink
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler
 import io.flutter.plugin.common.MethodChannel.Result
-import io.flutter.plugin.common.PluginRegistry.Registrar
+import io.flutter.plugin.common.PluginRegistry.ActivityResultListener
+
 import java.util.concurrent.CompletableFuture
 
 
 /** UssdAdvancedPlugin */
-class UssdAdvancedPlugin: FlutterPlugin, MethodCallHandler, ActivityAware, BasicMessageChannel.MessageHandler<String?>  {
+class UssdAdvancedPlugin: FlutterPlugin, MethodCallHandler, ActivityAware, BasicMessageChannel.MessageHandler<String?>, ActivityResultListener, EventChannel.StreamHandler  {
   /// The MethodChannel that will the communication between Flutter and native Android
   ///
   /// This local reference serves to register the plugin with the Flutter Engine and unregister it
@@ -41,7 +46,12 @@ class UssdAdvancedPlugin: FlutterPlugin, MethodCallHandler, ActivityAware, Basic
 
 
   private lateinit var basicMessageChannel: BasicMessageChannel<String>
+  private lateinit var eventChannel: EventChannel
 
+  private var pendingResult: Result? = null
+  val REQUEST_CODE_FOR_ACCESSIBILITY = 167
+  private var accessibilityReceiver: AccessibilityReceiver? = null
+  private var mActivity: Activity? = null
 
   override fun onAttachedToEngine(@NonNull flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
     channel = MethodChannel(flutterPluginBinding.binaryMessenger, "method.com.phan_tech/ussd_advanced")
@@ -51,18 +61,64 @@ class UssdAdvancedPlugin: FlutterPlugin, MethodCallHandler, ActivityAware, Basic
       flutterPluginBinding.binaryMessenger,
       "message.com.phan_tech/ussd_advanced", StringCodec.INSTANCE
     )
+
+    eventChannel = EventChannel(
+            flutterPluginBinding.binaryMessenger,
+            "event.com.phan_tech/ussd_advanced")
+    eventChannel.setStreamHandler(this)
+
+  }
+
+
+  override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?): Boolean {
+    if (requestCode == REQUEST_CODE_FOR_ACCESSIBILITY) {
+      if (resultCode == Activity.RESULT_OK) {
+        pendingResult!!.success(true)
+      } else if (resultCode == Activity.RESULT_CANCELED) {
+        pendingResult!!.success(Utils.isAccessibilitySettingsOn(context))
+      } else {
+        pendingResult!!.success(false)
+      }
+      return true
+    }
+    return false
+  }
+
+  override fun onListen(arguments: Any?, events: EventSink?) {
+    if (isAccessibilitySettingsOn(context)) {
+      /// Set up receiver
+      val intentFilter = IntentFilter()
+      intentFilter.addAction(AccessibilityListener.ACCESSIBILITY_INTENT)
+      accessibilityReceiver = AccessibilityReceiver(events)
+      context!!.registerReceiver(accessibilityReceiver, intentFilter)
+
+      /// Set up listener intent
+      val listenerIntent = Intent(context, AccessibilityListener::class.java)
+      context!!.startService(listenerIntent)
+      Log.i("AccessibilityPlugin", "Started the accessibility tracking service.")
+    }
+  }
+
+  override fun onCancel(arguments: kotlin.Any?){
+    context!!.unregisterReceiver(accessibilityReceiver)
+    accessibilityReceiver = null
   }
 
   override fun onAttachedToActivity(binding: ActivityPluginBinding) {
     activity = binding.activity
+    mActivity = binding.activity
+    binding.addActivityResultListener(this)
   }
 
   override fun onDetachedFromActivity() {
     activity = null
+    mActivity = null
   }
+
 
   override fun onDetachedFromActivityForConfigChanges() {
     senderActivity = null
+    mActivity = null
   }
 
   override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {
@@ -94,6 +150,7 @@ class UssdAdvancedPlugin: FlutterPlugin, MethodCallHandler, ActivityAware, Basic
     Log.d("onMethodCall","onMethodCall1")
     var subscriptionId:Int = 1
     var code:String? = ""
+    pendingResult = result
 
     Log.d("onMethodCall","method=="+call.method.toString())
     if(call.method == "sendUssd" ||call.method == "sendAdvancedUssd" ||call.method == "multisessionUssd"){
@@ -177,6 +234,13 @@ class UssdAdvancedPlugin: FlutterPlugin, MethodCallHandler, ActivityAware, Basic
       "multisessionUssdCancel" ->{
         multisessionUssdCancel()
       }
+       "isAccessibilityPermissionEnabled" ->{
+        result.success(isAccessibilitySettingsOn(context))
+      }
+      "requestAccessibilityPermission" ->{
+        val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+        mActivity!!.startActivityForResult(intent, REQUEST_CODE_FOR_ACCESSIBILITY)
+      }
       else -> {
         result.notImplemented()
       }
@@ -185,7 +249,10 @@ class UssdAdvancedPlugin: FlutterPlugin, MethodCallHandler, ActivityAware, Basic
 
   override fun onDetachedFromEngine(@NonNull binding: FlutterPlugin.FlutterPluginBinding) {
     channel.setMethodCallHandler(null)
+    eventChannel.setStreamHandler(null)
   }
+
+
 
   private class RequestExecutionException internal constructor(override var message: String) :
     Exception() {

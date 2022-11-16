@@ -22,6 +22,7 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityManager
 import androidx.annotation.RequiresApi
 
+
 /**
  * @author Romell Dominguez
  * @version 1.1.i 2019/04/18

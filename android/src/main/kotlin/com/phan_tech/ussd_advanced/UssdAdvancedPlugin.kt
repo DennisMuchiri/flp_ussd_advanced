@@ -53,6 +53,10 @@ class UssdAdvancedPlugin: FlutterPlugin, MethodCallHandler, ActivityAware, Basic
   private var accessibilityReceiver: AccessibilityReceiver? = null
   private var mActivity: Activity? = null
 
+
+
+
+
   override fun onAttachedToEngine(@NonNull flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
     channel = MethodChannel(flutterPluginBinding.binaryMessenger, "method.com.phan_tech/ussd_advanced")
     channel.setMethodCallHandler(this)
@@ -375,7 +379,7 @@ class UssdAdvancedPlugin: FlutterPlugin, MethodCallHandler, ActivityAware, Basic
           Log.d("onMethodCall","callUSSDInvoke over ")
           basicMessageChannel.setMessageHandler(null)
           basicMessageChannel.send(message)
-          result.success(message)
+          result.success("OVER:"+message)
         }catch (e: Exception){
           Log.d("onMethodCall","callUSSDInvoke over error=="+e.toString())
         }
